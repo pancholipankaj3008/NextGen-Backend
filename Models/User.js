@@ -17,7 +17,7 @@ let userSchema = mongoose.Schema({
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true, lowercase: true },
     password: { type: String, required: true },
-    role: { type: String, enum: ["user", "admin", "manager"], default: "user" },
+    role: { type: String, enum: ["user", "admin", "product manager", "order manager", "inventory staff"], default: "user" },
     phone: { type: String },
     avatar: { type: String },
     isVerified: { type: Boolean, default: false },
@@ -27,6 +27,7 @@ let userSchema = mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: "Product"
     }],
+    isBlocked: {type: Boolean, default: false}
 }, {
     timestamps: true
 });
