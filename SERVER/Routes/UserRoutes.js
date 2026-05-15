@@ -72,4 +72,4 @@ UserRouter.put("/unblock-user/:id", Auth("admin"),UnblockUser);
 UserRouter.get("/user-analytics",Auth("admin"),UserAnalytics);
 
 
-module.exports = UserRouter;
+module.exports= UserRouter ;

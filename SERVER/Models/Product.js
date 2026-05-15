@@ -16,7 +16,7 @@ const variantSchema = new mongoose.Schema({
 
 
 let productSchema = mongoose.Schema({
-    tittle: { type: String, required: true },
+    title: { type: String, required: true },
     slug: { type: String, unique: true },
     description: { type: String, required: true },
     shortDescription: { type: String },
@@ -32,6 +32,8 @@ let productSchema = mongoose.Schema({
     sleeveType: { type: String, enum: ["Half Sleeve", "Full Sleeve", "Sleeveless"] },
 
     neckType: { type: String, enum: ["Round Neck", "V Neck", "Collar", "Hooded"] },
+
+    images: [String],
 
     variants: [variantSchema],
 
@@ -51,6 +53,12 @@ let productSchema = mongoose.Schema({
 
     careInstructions: [{ type: String }],
 
+    totalStock:{type:Number, default:0 },
+
+    seoTitle:{type:String},
+
+    seoDescription:{type:String},
+
     isFeatured: { type: Boolean, default: false },
 
     isNewArrival: { type: Boolean, default: false },
@@ -59,7 +67,10 @@ let productSchema = mongoose.Schema({
 
     isActive: { type: Boolean, default: true },
 
+    deletedAt:{ type:Date, default:null},
+    
     sku: { type: String, unique: true }
+
 
 },
     {

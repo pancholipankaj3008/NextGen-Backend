@@ -2,10 +2,10 @@ let mongoose = require("mongoose");
 
 const couponSchema = new mongoose.Schema({
 
-  code: {type:String},
-  discountType: {type: String, enum: ["percent", "flat"]},
-  discountValue: {type:Number},
-  minOrderAmount: {type:Number},
+  code: {type:String, unique: true, required:true},
+  discountType: {type: String, enum: ["percent", "flat"], required:true},
+  discountValue: {type:Number, required:true},
+  minOrderAmount: {type:Number,  default:0},
   expireAt: {type:Date},
   active: {type: Boolean,default: true}
 

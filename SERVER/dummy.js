@@ -1,470 +1,613 @@
-// ===============================
-// Controllers/UserController.js
-// ===============================
+// ======================================
+// Controllers/ProductController.js
+// ======================================
 
-const User = require("../Models/UserSchema");
-const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
-const nodemailer = require("nodemailer");
+const Product = require("../Models/Product");
 
-const saltRounds = 10;
+const cloudinary = require("../config/cloudinaryConfig");
+
+const streamifier = require("streamifier");
+
+const slugify = require("slugify");
 
 
-// ===============================
-// SIGNUP
-// ===============================
 
-async function SignUp(req, res) {
-  try {
-    let { email, password } = req.body;
+// ======================================
+// CLOUDINARY IMAGE UPLOAD FUNCTION
+// ======================================
 
-    let existUser = await User.findOne({ email });
+const uploadImage = async (fileBuffer) => {
 
-    if (existUser) {
-      return res.json({
-        success: false,
-        message: "User already exists"
-      });
+    return new Promise((resolve, reject) => {
+
+        const stream = cloudinary.uploader.upload_stream(
+
+            {
+                folder: "clothing-brand-products"
+            },
+
+            (error, result) => {
+
+                if (result) {
+                    resolve(result);
+                } else {
+                    reject(error);
+                }
+
+            }
+        );
+
+        streamifier
+            .createReadStream(fileBuffer)
+            .pipe(stream);
+
+    });
+};
+
+
+
+// ======================================
+// ADD PRODUCT
+// ======================================
+
+async function AddProduct(req, res) {
+
+    try {
+
+        let {
+
+            title,
+            description,
+            shortDescription,
+            brand,
+            category,
+            gender,
+            price,
+            discountPercent,
+            fabric,
+            fitType,
+            sleeveType,
+            neckType,
+            variants,
+            tags,
+            collection,
+            returnPolicy,
+            careInstructions,
+            isFeatured,
+            isNewArrival,
+            isTrending
+
+        } = req.body;
+
+
+
+        // CHECK PRODUCT
+        let existProduct = await Product.findOne({ title });
+
+        if (existProduct) {
+
+            return res.json({
+                success: false,
+                message: "Product already exists"
+            });
+
+        }
+
+
+
+        // IMAGE VALIDATION
+        if (!req.files || req.files.length === 0) {
+
+            return res.json({
+                success: false,
+                message: "Please upload product images"
+            });
+
+        }
+
+
+
+        // UPLOAD IMAGES
+        let uploadedImages = [];
+
+        for (let file of req.files) {
+
+            const result = await uploadImage(file.buffer);
+
+            uploadedImages.push(result.secure_url);
+
+        }
+
+
+
+        // FINAL PRICE
+        let finalPrice =
+            price -
+            (price * discountPercent) / 100;
+
+
+
+        // SLUG
+        let slug = slugify(title, {
+            lower: true,
+            strict: true
+        });
+
+
+
+        // SKU
+        let sku = "SKU-" + Date.now();
+
+
+
+        // CREATE PRODUCT
+        let newProduct = new Product({
+
+            title,
+            slug,
+            description,
+            shortDescription,
+            brand,
+            category,
+            gender,
+            price,
+            discountPercent,
+            finalPrice,
+            fabric,
+            fitType,
+            sleeveType,
+            neckType,
+
+            images: uploadedImages,
+
+            variants:
+                variants
+                    ? JSON.parse(variants)
+                    : [],
+
+            tags:
+                tags
+                    ? JSON.parse(tags)
+                    : [],
+
+            collection,
+
+            returnPolicy,
+
+            careInstructions:
+                careInstructions
+                    ? JSON.parse(careInstructions)
+                    : [],
+
+            isFeatured,
+            isNewArrival,
+            isTrending,
+
+            sku
+
+        });
+
+
+
+        await newProduct.save();
+
+
+
+        res.json({
+
+            success: true,
+
+            message: "Product Added Successfully",
+
+            product: newProduct
+
+        });
+
+    } catch (error) {
+
+        res.json({
+
+            success: false,
+
+            message: error.message
+
+        });
+
     }
-
-    bcrypt.hash(password, saltRounds, async (err, hash) => {
-      if (err) {
-        return res.json({
-          success: false,
-          message: err.message
-        });
-      }
-
-      let newUser = new User({
-        ...req.body,
-        password: hash
-      });
-
-      await newUser.save();
-
-      res.json({
-        success: true,
-        message: "User Registered Successfully"
-      });
-    });
-
-  } catch (error) {
-    res.json({
-      success: false,
-      message: error.message
-    });
-  }
 }
 
 
 
-// ===============================
-// LOGIN
-// ===============================
 
-async function LogIn(req, res) {
-  try {
-    let { email, password } = req.body;
+// ======================================
+// GET ALL PRODUCTS
+// ======================================
 
-    let user = await User.findOne({ email });
+async function GetAllProducts(req, res) {
 
-    if (!user) {
-      return res.json({
-        success: false,
-        message: "User not found"
-      });
+    try {
+
+        let {
+
+            search,
+            category,
+            gender,
+            collection,
+            fitType,
+            minPrice,
+            maxPrice,
+            sort,
+            page = 1,
+            limit = 10
+
+        } = req.query;
+
+
+
+        let query = {};
+
+
+
+        // SEARCH
+        if (search) {
+
+            query.title = {
+                $regex: search,
+                $options: "i"
+            };
+
+        }
+
+
+
+        // FILTERS
+        if (category) {
+            query.category = category;
+        }
+
+        if (gender) {
+            query.gender = gender;
+        }
+
+        if (collection) {
+            query.collection = collection;
+        }
+
+        if (fitType) {
+            query.fitType = fitType;
+        }
+
+
+
+        // PRICE FILTER
+        if (minPrice || maxPrice) {
+
+            query.finalPrice = {};
+
+            if (minPrice) {
+                query.finalPrice.$gte = Number(minPrice);
+            }
+
+            if (maxPrice) {
+                query.finalPrice.$lte = Number(maxPrice);
+            }
+
+        }
+
+
+
+        // SORTING
+        let sortOption = {};
+
+        if (sort === "lowToHigh") {
+            sortOption.finalPrice = 1;
+        }
+
+        else if (sort === "highToLow") {
+            sortOption.finalPrice = -1;
+        }
+
+        else if (sort === "newest") {
+            sortOption.createdAt = -1;
+        }
+
+        else if (sort === "popular") {
+            sortOption.soldCount = -1;
+        }
+
+
+
+        // PAGINATION
+        let skip =
+            (Number(page) - 1) * Number(limit);
+
+
+
+        // PRODUCTS
+        let products = await Product.find(query)
+
+            .sort(sortOption)
+
+            .skip(skip)
+
+            .limit(Number(limit));
+
+
+
+        // TOTAL PRODUCTS
+        let totalProducts =
+            await Product.countDocuments(query);
+
+
+
+        res.json({
+
+            success: true,
+
+            totalProducts,
+
+            currentPage: Number(page),
+
+            totalPages:
+                Math.ceil(totalProducts / limit),
+
+            products
+
+        });
+
+    } catch (error) {
+
+        res.json({
+
+            success: false,
+
+            message: error.message
+
+        });
+
     }
-
-    bcrypt.compare(password, user.password, (err, result) => {
-
-      if (err) {
-        return res.json({
-          success: false,
-          message: err.message
-        });
-      }
-
-      if (!result) {
-        return res.json({
-          success: false,
-          message: "Invalid Password"
-        });
-      }
-
-      let accessToken = jwt.sign(
-        { id: user._id, role: user.role },
-        process.env.ACCESS,
-        { expiresIn: "15m" }
-      );
-
-      let refreshToken = jwt.sign(
-        { id: user._id, role: user.role },
-        process.env.REFRESH,
-        { expiresIn: "7d" }
-      );
-
-      res.cookie("accessToken", accessToken, {
-        httpOnly: true,
-        secure: false,
-        maxAge: 15 * 60 * 1000
-      });
-
-      res.cookie("refreshToken", refreshToken, {
-        httpOnly: true,
-        secure: false,
-        maxAge: 7 * 24 * 60 * 60 * 1000
-      });
-
-      res.json({
-        success: true,
-        message: "Login Successful"
-      });
-
-    });
-
-  } catch (error) {
-    res.json({
-      success: false,
-      message: error.message
-    });
-  }
 }
 
 
 
-// ===============================
-// LOGOUT
-// ===============================
 
-async function LogOut(req, res) {
-  try {
+// ======================================
+// GET SINGLE PRODUCT
+// ======================================
 
-    res.clearCookie("accessToken");
-    res.clearCookie("refreshToken");
+async function GetSingleProduct(req, res) {
 
-    res.json({
-      success: true,
-      message: "Logout Successfully"
-    });
+    try {
 
-  } catch (error) {
-    res.json({
-      success: false,
-      message: error.message
-    });
-  }
-}
+        let { id } = req.params;
 
 
 
-// ===============================
-// FORGOT PASSWORD
-// ===============================
+        let product = await Product.findById(id);
 
-async function ForgotPassword(req, res) {
-  try {
 
-    let { email } = req.body;
 
-    let user = await User.findOne({ email });
+        if (!product) {
 
-    if (!user) {
-      return res.json({
-        success: false,
-        message: "User not found"
-      });
+            return res.json({
+                success: false,
+                message: "Product not found"
+            });
+
+        }
+
+
+
+        // INCREASE VIEW COUNT
+        product.views += 1;
+
+        await product.save();
+
+
+
+        res.json({
+
+            success: true,
+
+            product
+
+        });
+
+    } catch (error) {
+
+        res.json({
+
+            success: false,
+
+            message: error.message
+
+        });
+
     }
-
-    let resetToken = jwt.sign(
-      { email },
-      process.env.RESET,
-      { expiresIn: "15m" }
-    );
-
-    let resetLink =
-      `http://localhost:5173/reset-password/${resetToken}`;
-
-    let transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-      }
-    });
-
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: "Reset Password",
-      html: `
-        <h2>Password Reset</h2>
-        <a href="${resetLink}">${resetLink}</a>
-      `
-    });
-
-    res.json({
-      success: true,
-      message: "Reset link sent"
-    });
-
-  } catch (error) {
-    res.json({
-      success: false,
-      message: error.message
-    });
-  }
 }
 
 
 
-// ===============================
-// RESET PASSWORD
-// ===============================
 
-async function ResetPassword(req, res) {
-  try {
+// ======================================
+// UPDATE PRODUCT
+// ======================================
 
-    let { resetToken } = req.params;
-    let { newPassword } = req.body;
+async function UpdateProduct(req, res) {
 
-    let decoded = jwt.verify(
-      resetToken,
-      process.env.RESET
-    );
+    try {
 
-    bcrypt.hash(newPassword, saltRounds, async (err, hash) => {
+        let { id } = req.params;
 
-      if (err) {
-        return res.json({
-          success: false,
-          message: err.message
+
+
+        let product = await Product.findById(id);
+
+        if (!product) {
+
+            return res.json({
+                success: false,
+                message: "Product not found"
+            });
+
+        }
+
+
+
+        // NEW IMAGES
+        let uploadedImages = product.images;
+
+
+
+        if (req.files && req.files.length > 0) {
+
+            uploadedImages = [];
+
+            for (let file of req.files) {
+
+                const result =
+                    await uploadImage(file.buffer);
+
+                uploadedImages.push(result.secure_url);
+
+            }
+
+        }
+
+
+
+        // FINAL PRICE
+        let finalPrice =
+            req.body.price -
+            (req.body.price *
+                req.body.discountPercent) / 100;
+
+
+
+        // UPDATE
+        await Product.findByIdAndUpdate(id, {
+
+            ...req.body,
+
+            finalPrice,
+
+            slug: slugify(req.body.title, {
+                lower: true,
+                strict: true
+            }),
+
+            images: uploadedImages,
+
+            variants:
+                req.body.variants
+                    ? JSON.parse(req.body.variants)
+                    : product.variants,
+
+            tags:
+                req.body.tags
+                    ? JSON.parse(req.body.tags)
+                    : product.tags,
+
+            careInstructions:
+                req.body.careInstructions
+                    ? JSON.parse(req.body.careInstructions)
+                    : product.careInstructions
+
         });
-      }
 
-      await User.findOneAndUpdate(
-        { email: decoded.email },
-        { password: hash }
-      );
 
-      res.json({
-        success: true,
-        message: "Password Reset Successfully"
-      });
 
-    });
+        res.json({
 
-  } catch (error) {
-    res.json({
-      success: false,
-      message: error.message
-    });
-  }
+            success: true,
+
+            message: "Product Updated Successfully"
+
+        });
+
+    } catch (error) {
+
+        res.json({
+
+            success: false,
+
+            message: error.message
+
+        });
+
+    }
 }
 
 
 
-// ===============================
-// GET PROFILE
-// ===============================
 
-async function GetProfile(req, res) {
-  try {
+// ======================================
+// DELETE PRODUCT
+// ======================================
 
-    let user = await User.findById(req.id).select("-password");
+async function DeleteProduct(req, res) {
 
-    res.json({
-      success: true,
-      user
-    });
+    try {
 
-  } catch (error) {
-    res.json({
-      success: false,
-      message: error.message
-    });
-  }
+        let { id } = req.params;
+
+
+
+        let product = await Product.findById(id);
+
+        if (!product) {
+
+            return res.json({
+                success: false,
+                message: "Product not found"
+            });
+
+        }
+
+
+
+        await Product.findByIdAndDelete(id);
+
+
+
+        res.json({
+
+            success: true,
+
+            message: "Product Deleted Successfully"
+
+        });
+
+    } catch (error) {
+
+        res.json({
+
+            success: false,
+
+            message: error.message
+
+        });
+
+    }
 }
 
 
 
-// ===============================
-// UPDATE PROFILE
-// ===============================
 
-async function UpdateProfile(req, res) {
-  try {
-
-    await User.findByIdAndUpdate(req.id, req.body);
-
-    res.json({
-      success: true,
-      message: "Profile Updated"
-    });
-
-  } catch (error) {
-    res.json({
-      success: false,
-      message: error.message
-    });
-  }
-}
-
-
-
-// ===============================
-// ADD ADDRESS
-// ===============================
-
-async function AddAddress(req, res) {
-  try {
-
-    await User.findByIdAndUpdate(req.id, {
-      $push: {
-        addresses: req.body
-      }
-    });
-
-    res.json({
-      success: true,
-      message: "Address Added"
-    });
-
-  } catch (error) {
-    res.json({
-      success: false,
-      message: error.message
-    });
-  }
-}
-
-
-
-// ===============================
-// DELETE ADDRESS
-// ===============================
-
-async function DeleteAddress(req, res) {
-  try {
-
-    let { addressId } = req.params;
-
-    await User.findByIdAndUpdate(req.id, {
-      $pull: {
-        addresses: { _id: addressId }
-      }
-    });
-
-    res.json({
-      success: true,
-      message: "Address Deleted"
-    });
-
-  } catch (error) {
-    res.json({
-      success: false,
-      message: error.message
-    });
-  }
-}
-
-
-
-// ===============================
-// GET WISHLIST
-// ===============================
-
-async function GetWishlist(req, res) {
-  try {
-
-    let user = await User.findById(req.id)
-      .populate("wishlist");
-
-    res.json({
-      success: true,
-      wishlist: user.wishlist
-    });
-
-  } catch (error) {
-    res.json({
-      success: false,
-      message: error.message
-    });
-  }
-}
-
-
-
-// ===============================
-// ADD WISHLIST
-// ===============================
-
-async function AddToWishlist(req, res) {
-  try {
-
-    let { productId } = req.params;
-
-    await User.findByIdAndUpdate(req.id, {
-      $addToSet: {
-        wishlist: productId
-      }
-    });
-
-    res.json({
-      success: true,
-      message: "Added to wishlist"
-    });
-
-  } catch (error) {
-    res.json({
-      success: false,
-      message: error.message
-    });
-  }
-}
-
-
-
-// ===============================
-// REMOVE WISHLIST
-// ===============================
-
-async function RemoveWishlist(req, res) {
-  try {
-
-    let { productId } = req.params;
-
-    await User.findByIdAndUpdate(req.id, {
-      $pull: {
-        wishlist: productId
-      }
-    });
-
-    res.json({
-      success: true,
-      message: "Removed from wishlist"
-    });
-
-  } catch (error) {
-    res.json({
-      success: false,
-      message: error.message
-    });
-  }
-}
-
-
+// ======================================
+// EXPORTS
+// ======================================
 
 module.exports = {
-  SignUp,
-  LogIn,
-  LogOut,
-  ForgotPassword,
-  ResetPassword,
-  GetProfile,
-  UpdateProfile,
-  AddAddress,
-  DeleteAddress,
-  GetWishlist,
-  AddToWishlist,
-  RemoveWishlist
+
+    AddProduct,
+
+    GetAllProducts,
+
+    GetSingleProduct,
+
+    UpdateProduct,
+
+    DeleteProduct
+
 };
